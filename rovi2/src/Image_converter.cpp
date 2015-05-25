@@ -1,86 +1,54 @@
 #include <ros/ros.h>
 #include <image_transport/image_transport.h>
-#include <cv_bridge/cv_bridge.h>
-#include <sensor_msgs/image_encodings.h>
 #include <opencv2/imgproc/imgproc.hpp>
 #include <opencv2/highgui/highgui.hpp>
+#include <iostream>
+#include <fstream>
+#include <cv_bridge/cv_bridge.h>
+using namespace cv;
+static const std::string OPENCV_WINDOW = "Image window";
+static const std::string OPENCV_TRACKBAR = "HSV Trackbar";
+static const std::string OPENCV_THRESHOLD = "Thresholded image";
+static int iLowH = 20;
+static int iHighH = 0;
+static int iLowS = 0;
+static int iHighS = 30;
+static int iLowV = 255;
+static int iHighV = 255;
 
-static const std::string OPENCV_WINDOW_RIGHT = "Right camera";
-static const std::string OPENCV_WINDOW_LEFT = "Left camera";
-class ImageConverter
+
+void imageCallback(const sensor_msgs::ImageConstPtr& msg)
 {
-  ros::NodeHandle nh_right;
-  image_transport::ImageTransport it_right;
-  image_transport::Subscriber image_sub_right;
-  image_transport::Publisher image_pub_right;
-  
-  //ros::NodeHandle nh_left;
-  //image_transport::ImageTransport it_left;
-  //image_transport::Subscriber image_sub_left;
-  //image_transport::Publisher image_pub_left;
-  
-public:
-  //right camera
-  ImageConverter(): it_right(nh_right)
+  try
   {
-    // change here the topic to subscribe
-    image_sub_right = it_right.subscribe("/stereo_camera/right/image_raw", 1, &ImageConverter::imageManipulation, this);
-    image_pub_right = it_right.advertise("/image_converter/right/output_video", 1);
-    
-    cv::namedWindow(OPENCV_WINDOW_RIGHT);
-    
-  }
+  cv::imshow("view", cv_bridge::toCvShare(msg, "bgr8")->image);
 
- //left camera
-  //ImageConverter(): it_left(nh_left)
-  //{
-    // change here the topic to subscribe
+  
+  
+  Mat cv_HSV;
+  cv::cvtColor(cv_bridge::toCvShare(msg, "bgr8")->image,cv_HSV,COLOR_RGB2HSV);
+  cv::inRange(cv_HSV, Scalar(iLowH, iLowS, iLowV), Scalar(iHighH, iHighS, iHighV), cv_HSV); //Threshold the image
+  cv::imshow(OPENCV_THRESHOLD,cv_HSV);
+  cv::waitKey(3);
+  }
+  catch (cv_bridge::Exception& e)
+  {
+    ROS_ERROR("Could not convert from '%s' to 'bgr8'.", msg->encoding.c_str());
+  }
+}
+
+int main(int argc, char **argv)
+{
+  ros::init(argc, argv, "image_listener");
+  ros::NodeHandle nh;
+  cv::namedWindow("view",WINDOW_NORMAL);
  
-    //image_sub_left = it_left.subscribe("/stereo_camera/left/image_raw", 1, &ImageConverter::imageManipulation, this);
-    //image_pub_left = it_left.advertise("/image_converter/left/output_video", 1);
-
-   
-    //cv::namedWindow(OPENCV_WINDOW_LEFT);
-  //}
-
-  ~ImageConverter()
-  {
-     cv::destroyWindow(OPENCV_WINDOW_RIGHT);
-    //cv::destroyWindow(OPENCV_WINDOW_LEFT);
-  }
-
-  void imageManipulation(const sensor_msgs::ImageConstPtr& msg)
-  {
-    cv_bridge::CvImagePtr cv_ptr_right;
-    //cv_bridge::CvImagePtr cv_ptr_left;
-    try
-    {
-      cv_ptr_right = cv_bridge::toCvCopy(msg, sensor_msgs::image_encodings::BGR8);
-     //cv_ptr_left = cv_bridge::toCvCopy(msg, sensor_msgs::image_encodings::BGR8);
-    }
-    catch (cv_bridge::Exception& e)
-    {
-      ROS_ERROR("cv_bridge exception: %s", e.what());
-      return;
-    }
-
-//implement here your own code,to access to the image you have to use the cv_bridge::obj->image
-
-    // Update GUI Window
-    cv::imshow(OPENCV_WINDOW_RIGHT, cv_ptr_right->image);
-    //cv::imshow(OPENCV_WINDOW_LEFT, cv_ptr_left->image);
-    cv::waitKey(0);
-    
-    // Output modified video stream
-    image_pub_right.publish(cv_ptr_right->toImageMsg());
-    //image_pub_left.publish(cv_ptr_left->toImageMsg());
-  }
-};
-
-int main(int argc, char** argv)
-{
-  ros::init(argc, argv, "image_converter");
-  ImageConverter ic;
+  cv::namedWindow(OPENCV_THRESHOLD,WINDOW_NORMAL);
+  cv::startWindowThread();
+  image_transport::ImageTransport it(nh);
+  image_transport::Subscriber sub = it.subscribe("stereo_camera/left/image_raw", 1, imageCallback);
   ros::spin();
-  return 0;
+  cv::destroyWindow("view");
+  
+  cv::destroyWindow(OPENCV_THRESHOLD);
 }
